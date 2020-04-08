@@ -11,9 +11,8 @@ radius = 0.5
 cam_info = {"FOV center": 0, # degrees
             "FOV width": 20, # degrees
             }
-
-discrits = 15
-world = np.linspace(0,360-360/discrits,discrits)
+# camera control in degrees CCW
+ctrl = 10
 
 N_particles = 100
 
@@ -67,10 +66,8 @@ class visual():
         # center point (rig)
         self.viz.plot((rigx), (rigy), 'o', color='k',MarkerSize=2)
 
-##        print(' ')
-##        print(particles[0])
         for p in particles[0]:
-            d = np.deg2rad(world[p] + np.random.randint(10))
+            d = np.deg2rad(p + np.random.randint(2))
             r = np.random.rand()*0.3 + 0.2
             x , y = pol2cart(r, d)
             x += cent[0]
@@ -106,40 +103,41 @@ def low_variance_resample(b, w):
 ##        print(m,i)
     return bnew
 
-def update_belief(b, cam_pos, observation):
+def domain_resample(b, percent):
+    """Reject a small % of particles and replace them from a known distribution."""
+    cut = int(percent*b.shape[1])
+    if cut <= 0: cut = 1
+    fresh_partics = np.random.rand(1,cut)*360
+    
+    # hm, just resampling z% of all particles seems to work well.
+    # noteably this cuts down heaviest on particle dense regions.
+    # however since in this filtering case, particle dense regions
+    # are actually an artifact, this turns out to be good and rational.
+    b = np.concatenate((b[:,cut:],fresh_partics),axis = 1)
+    return b
+
+
+def update_belief(b, cam, observation):
     weights = [1/len(b[0])]*len(b[0])
     weights = np.asarray(weights)
 
-    domain_resample = True
-    if domain_resample:
-        # reject the bottom z% likelihood particles and resample
-        # from an analytical distribution. Assign mean weight for
-        # these new particles
-        # TODO: this is very inefficient computationally...
-        cut = int(0.01*b.shape[1])
-        if cut <= 0: cut = 1
-    ##    print(cut)
-        fresh_partics = np.random.randint(discrits, size=(1,cut))
-    ##    print(b[0,np.where(np.argsort(weights)>=cut)].shape,fresh_partics.shape)
-##        b = np.concatenate((b[0,np.where(np.argsort(weights)>=cut)],fresh_partics),axis = 1)
-        
-        # hm, just resampling z% of all particles seems to work well.
-        # noteably this cuts down heavier on particle dense regions.
-        # however since in this filtering case, particle dense regions
-        # are actually an artifact, this turns out to be good and rational.
-        b = np.concatenate((b[:,cut:],fresh_partics),axis = 1)
+    b = domain_resample(b,0.01)
         
     i = 0
     for p in b[0]:
         # if contained generative model would update here
         # based on states like velocity
 
+##        low, high = get_FOV_ends(cam["FOV center"],cam["FOV width"])
+##        if (0 <= (p - low) <= cam["FOV width"]/2) or (0 <= (high - p) <= cam["FOV width"]/2):
+        # TODO: unclear which of the above or below conditions is better or if they both
+        # have a bug
         # assign weight to every particle based on observation
-        if cam_pos == p:
+        if (abs(p-cam["FOV center"]) % 360) <= cam["FOV width"]/2:
             if observation:
                 weights[i] = 10*weights[i]
             else:
-                weights[i] = 0.10*weights[i]
+                weights[i] = 0.05*weights[i]
         else:
             pass # no observation on this particle
 
@@ -154,30 +152,43 @@ def update_belief(b, cam_pos, observation):
     # use the low variance resampling algorithm from the Probabilistic Robotics Book
     b_new = low_variance_resample(b, weights)
     b_new = b_new.astype(int)
+
+    # TODO: maybe add a flag condition, if variance ever does get super low, resample
+    # uniformly?
+    
     return b_new
     
 # initialize belief to a random distribution of particles
-belief = np.random.randint(discrits,size=(1,N_particles)) 
+belief = np.random.rand(1,N_particles)*360
+##belief = belief.astype(int)
 
 viz = visual()
-for i in range(250):
+for i in range(550):
     # display what's happening
     plt.figure(1)
     viz.update(cam_info,belief,0, incre = i)
     
-    plt.figure(2)
-    plt.cla()
-    plt.hist(belief[0],bins=range(discrits))
-    plt.ylim([0,35])
-    plt.pause(0.001)
-
-    # put the continuous camera center into a discrete world bin
-    cam_ind = np.where(abs(cam_info["FOV center"] - world) == min(abs(cam_info["FOV center"] - world)))[0][0]
+##    plt.figure(2)
+##    plt.cla()
+##    plt.hist(belief[0],bins=range(360/2))
+##    plt.ylim([0,35])
+##    plt.pause(0.001)
 
     # update belief based on current state
-    belief = update_belief(belief, cam_ind, False)
+    belief = update_belief(belief, cam_info, False)
+
     
-    cam_info["FOV center"] += 10
+##    s = input("command: ")
+##    if s == '':
+##        pass
+##    elif s == 'a':
+##        ctrl = -10
+##    elif s == 's':
+##        ctrl = 0
+##    elif s == 'd':
+##        ctrl = 10
+        
+    cam_info["FOV center"] += ctrl
     cam_info["FOV center"] = cam_info["FOV center"] % 360
         
 plt.close()
