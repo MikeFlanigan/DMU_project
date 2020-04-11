@@ -9,8 +9,14 @@ cent = (rigx, rigy)
 radius = 0.5
 
 cam_info = {"FOV center": 0, # degrees
-            "FOV width": 20, # degrees
+            "FOV width": 40, # degrees
+            "Zoom": 0.0, # percent max
+            "Focal min": 0.2,  # unitless for now
+            "Focal max": 0.6,  # unitless for now
+            "FOV min_width": 5, # degrees FOV at max zoom
+            "FOV max_width": 90, # degrees FOV at min zoom
             }
+
 # camera control in degrees CCW
 ctrl = 10
 
@@ -31,6 +37,16 @@ def pol2cart(rho, phi):
     x = rho * np.cos(phi) 
     y = rho * np.sin(phi)
     return(x, y)
+
+def get_FOV_width(cam):
+    m = (cam["FOV max_width"] - cam["FOV min_width"])
+    width = -m*cam["Zoom"] + cam["FOV max_width"]
+    return width
+
+def get_focal_dist(cam):
+    m = (cam["Focal max"] - cam["Focal min"])
+    f_dist = m*cam["Zoom"] + cam["Focal min"]
+    return f_dist
 
 def get_FOV_ends(cent, FOV):
     """Take center of FOV and FOV in degrees [0-360]
@@ -66,9 +82,9 @@ class visual():
         # center point (rig)
         self.viz.plot((rigx), (rigy), 'o', color='k',MarkerSize=2)
 
-        for p in particles[0]:
-            d = np.deg2rad(p + np.random.randint(2))
-            r = np.random.rand()*0.3 + 0.2
+        for k in range(particles.shape[1]):
+            d = np.deg2rad(particles[1,k])
+            r = particles[0,k]
             x , y = pol2cart(r, d)
             x += cent[0]
             y += cent[1]
@@ -77,7 +93,7 @@ class visual():
         
         # create and plot camera FOV patch
         low, high = get_FOV_ends(cam["FOV center"],cam["FOV width"])
-        w = Wedge(cent, radius, low, high, color='g',alpha=0.5)
+        w = Wedge(cent, get_focal_dist(cam), low, high, color='g',alpha=0.5)
         self.viz.add_artist(w)
         
         if incre != None:
@@ -99,7 +115,9 @@ def low_variance_resample(b, w):
             i += 1
             i = i % num_particles
             c += w[i]
-        bnew[0,m] = b[0,i]
+        noise = np.asarray([np.random.rand()*radius/10-(radius/10)/2,np.random.randint(-3,4)])
+        bnew[:,m] = b[:,i] + noise
+        bnew[0,m] = np.clip(bnew[0,m],0.01*radius,radius) # clipping the particle distances
 ##        print(m,i)
     return bnew
 
@@ -107,7 +125,9 @@ def domain_resample(b, percent):
     """Reject a small % of particles and replace them from a known distribution."""
     cut = int(percent*b.shape[1])
     if cut <= 0: cut = 1
-    fresh_partics = np.random.rand(1,cut)*360
+    fresh_degs = np.random.rand(1,cut)*360
+    fresh_radis = np.random.rand(1,cut)*radius
+    fresh_partics = np.concatenate((fresh_radis,fresh_degs),0)
     
     # hm, just resampling z% of all particles seems to work well.
     # noteably this cuts down heaviest on particle dense regions.
@@ -124,16 +144,13 @@ def update_belief(b, cam, observation):
     b = domain_resample(b,0.01)
         
     i = 0
-    for p in b[0]:
+    for k in range(b.shape[1]):
         # if contained generative model would update here
         # based on states like velocity
 
-##        low, high = get_FOV_ends(cam["FOV center"],cam["FOV width"])
-##        if (0 <= (p - low) <= cam["FOV width"]/2) or (0 <= (high - p) <= cam["FOV width"]/2):
-        # TODO: unclear which of the above or below conditions is better or if they both
-        # have a bug
+        # TODO: write actual camera observation likelihoods based on zoom percents
         # assign weight to every particle based on observation
-        if (abs(p-cam["FOV center"]) % 360) <= cam["FOV width"]/2:
+        if (abs(b[1,k]-cam["FOV center"]) % 360) <= cam["FOV width"]/2 and b[0,k] <= get_focal_dist(cam):
             if observation:
                 weights[i] = 10*weights[i]
             else:
@@ -151,7 +168,7 @@ def update_belief(b, cam, observation):
     
     # use the low variance resampling algorithm from the Probabilistic Robotics Book
     b_new = low_variance_resample(b, weights)
-    b_new = b_new.astype(int)
+##    b_new = b_new.astype(int)
 
     # TODO: maybe add a flag condition, if variance ever does get super low, resample
     # uniformly?
@@ -159,24 +176,22 @@ def update_belief(b, cam, observation):
     return b_new
     
 # initialize belief to a random distribution of particles
-belief = np.random.rand(1,N_particles)*360
+degs = np.random.rand(1,N_particles)*360
+radis = np.random.rand(1,N_particles)*radius
+belief = np.concatenate((radis,degs),0) # a belief is now a radius and a distance
 
 viz = visual()
 for i in range(550):
-    # display what's happening
-    plt.figure(1)
-    viz.update(cam_info,belief,0, incre = i)
-    
-##    plt.figure(2)
-##    plt.cla()
-##    plt.hist(belief[0],bins=range(360/2))
-##    plt.ylim([0,35])
-##    plt.pause(0.001)
 
+    # camera control
+    cam_info["FOV center"] += ctrl
+    cam_info["FOV center"] = cam_info["FOV center"] % 360
+    cam_info["FOV width"] = get_FOV_width(cam_info)
+    
     # update belief based on current state
     belief = update_belief(belief, cam_info, False)
 
-    
+    cam_info["Zoom"] = 0.4
 ##    s = input("command: ")
 ##    if s == '':
 ##        pass
@@ -186,9 +201,16 @@ for i in range(550):
 ##        ctrl = 0
 ##    elif s == 'd':
 ##        ctrl = 10
+##    elif s == 'r':
+##        cam_info["Zoom"] += 0.10
+##    elif s == 'f':
+##        cam_info["Zoom"] -= 0.10
 
-    cam_info["FOV center"] += ctrl
-    cam_info["FOV center"] = cam_info["FOV center"] % 360
+##    print(cam_info["Zoom"],cam_info["FOV width"])
+
+    # display what's happening
+    plt.figure(1)
+    viz.update(cam_info,belief,0, incre = i)
         
 plt.close()
 
