@@ -36,8 +36,8 @@ def get_FOV_ends(cent, FOV):
     """Take center of FOV and FOV in degrees [0-360]
     and return low and high endpoints in degrees.
     """
-    l = (cent - FOV) % 360
-    h = (cent + FOV) % 360
+    l = (cent - FOV/2) % 360
+    h = (cent + FOV/2) % 360
     return [l,h]
 
 class visual():
@@ -187,7 +187,7 @@ for i in range(550):
 ##        ctrl = 0
 ##    elif s == 'd':
 ##        ctrl = 10
-        
+
     cam_info["FOV center"] += ctrl
     cam_info["FOV center"] = cam_info["FOV center"] % 360
         
