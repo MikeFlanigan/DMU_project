@@ -56,6 +56,22 @@ def get_FOV_ends(cent, FOV):
     h = (cent + FOV/2) % 360
     return [l,h]
 
+def in_FOV(p, cam):
+    if (abs(p[1]-cam["FOV center"]) % 360) <= cam["FOV width"]/2 and p[0] <= get_focal_dist(cam):
+##        print("In FOV!")
+        return True
+##    # check if the particle is within the focal distance of the camera
+##    if p[0] <= get_focal_dist(cam):
+##        # check if the particle is within the pan FOV of the camera
+##        if ((abs(p[1]-cam["FOV pan"]) % 360) <= cam["FOV width"]/2):
+##            # check if the particle is within the tilt FOV of the camera
+##            if ((abs(p[2]-cam["FOV pan"]) % 360) <= cam["FOV width"]/2):
+##                return True
+    # if not in the FOV then:
+    return False
+
+
+
 class visual():
     """Class for visualizing this experiment."""
     
@@ -115,7 +131,7 @@ def low_variance_resample(b, w):
             i += 1
             i = i % num_particles
             c += w[i]
-        noise = np.asarray([np.random.rand()*radius/10-(radius/10)/2,np.random.randint(-3,4)])
+        noise = np.asarray([np.random.rand()*radius/50-(radius/50)/2,np.random.randint(-1,2)])
         bnew[:,m] = b[:,i] + noise
         bnew[0,m] = np.clip(bnew[0,m],0.01*radius,radius) # clipping the particle distances
 ##        print(m,i)
@@ -150,7 +166,7 @@ def update_belief(b, cam, observation):
 
         # TODO: write actual camera observation likelihoods based on zoom percents
         # assign weight to every particle based on observation
-        if (abs(b[1,k]-cam["FOV center"]) % 360) <= cam["FOV width"]/2 and b[0,k] <= get_focal_dist(cam):
+        if in_FOV(b[:,k], cam):
             if observation:
                 weights[i] = 10*weights[i]
             else:
@@ -163,12 +179,8 @@ def update_belief(b, cam, observation):
     # normalize the weights to a valid probability distribution
     weights = weights/weights.sum()
     
-    # sample a new set of particles and return that as the new belief
-##    b_new = np.random.choice(b[0], replace=True, size=np.shape(b),p=weights)
-    
     # use the low variance resampling algorithm from the Probabilistic Robotics Book
     b_new = low_variance_resample(b, weights)
-##    b_new = b_new.astype(int)
 
     # TODO: maybe add a flag condition, if variance ever does get super low, resample
     # uniformly?
