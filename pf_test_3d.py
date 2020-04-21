@@ -276,13 +276,13 @@ for i in range(550):
 
     # camera control
     # rand control for testing
-    if i % 2 == 0:
-        cam_info["FOV pan"] = np.random.randint(0,360)
-        cam_info["FOV tilt"] = np.random.randint(0,90)
-        cam_info["Zoom"] = np.random.rand()
+##    if i % 2 == 0:
+##        cam_info["FOV pan"] = np.random.randint(0,360)
+##        cam_info["FOV tilt"] = np.random.randint(0,90)
+##        cam_info["Zoom"] = np.random.rand()
         
-##    cam_info["FOV pan"] += ctrl
-##    cam_info["FOV pan"] = cam_info["FOV pan"] % 360
+    cam_info["FOV pan"] += ctrl
+    cam_info["FOV pan"] = cam_info["FOV pan"] % 360
     cam_info["FOV width"] = get_FOV_width(cam_info)
     cam_info["FOV height"] = get_FOV_height(cam_info)
     
