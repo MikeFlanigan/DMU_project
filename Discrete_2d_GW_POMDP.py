@@ -41,11 +41,18 @@ GW_Actions = {
 
 # Should return transition probabilities rather than sp?
 def GW_Transitions(s, a):
-    sp = copy.deepcopy(s) # init return state
+    """Take in state and actions. Uses transition probabilities and sampling
+    to determine and return the next state.
+    """
+    
+    # make a copy of the state so it can be modified and returned
+    sp = copy.deepcopy(s) 
 
     # camera transitions
     # need to be a function of zoom to account for speed decrease
     # at deep zoom. write up include pix / meter / second at zooms
+    # aka the below says that the camera can pan faster when it
+    # is zoomed out, which matches real physics
     if a == "Left":
         if s.zoom <= 2:
             sp.cam_theta += 2
@@ -59,29 +66,35 @@ def GW_Transitions(s, a):
             sp.cam_theta -= 1
 
     # handle wrap around
-    if sp.cam_theta > 36:
-        sp.cam_theta = 1
-    if sp.cam_theta < 1:
-        sp.cam_theta = 36
+    sp.cam_theta = sp.cam_theta % 36
 
+    # update zoom
     if a == "ZoomIn":
         sp.zoom += 1
     elif a == "NoZoom": pass
     elif a == "ZoomOut":
         sp.zoom -= 1
-
     sp.zoom = clamp(sp.zoom, 1, 3)
 
+    # update dependent state variables
     sp.focal_pt, sp.FOV_width = sp.zoom_to_FOV()
 
-    # target transitions
-##    sp.theta_dot += random.random() - 0.5
-##    sp.theta_dot = clamp(sp.theta_dot, -1.9, 1.9)
-##    sp.r_dot += random.random() - 0.5
-##    sp.r_dot = clamp(sp.r_dot, -1, 1)
-    sp.theta_dot = 0
-    sp.r_dot = 0
     
+    # target transitions
+    moving_target = False
+    if moving_target:
+        # if want a moving target then add noise to
+        # velocity to create more realistic motion
+        sp.theta_dot += random.random() - 0.5
+        sp.theta_dot = clamp(sp.theta_dot, -1.9, 1.9)
+        sp.r_dot += random.random() - 0.5
+        sp.r_dot = clamp(sp.r_dot, -1, 1)
+    else:
+        # stationary target
+        sp.theta_dot = 0
+        sp.r_dot = 0
+
+    # update target state
     sp.target_theta += int(sp.theta_dot)
     sp.target_theta = sp.target_theta % 36
     sp.target_r += int(sp.r_dot)
@@ -92,8 +105,10 @@ def GW_Transitions(s, a):
 
 # should return observation probabilities rather than O?
 def GW_Observations(s):
-    # if in FOV
-    # TODO: not handling wrap around
+    """Returns a boolean observation depending on observation
+    model probabilities that are state dependent.
+    """
+    # if in FOV # TODO: not handling wrap around
     if abs(s.cam_theta - s.target_theta) <= math.ceil(s.FOV_width/2):
         # observation based on range
         if s.target_r == s.focal_pt: # in FOV and in focal range
@@ -114,6 +129,13 @@ def GW_Observations(s):
 
 
 def GW_Rewards(s, a):
+    """Return a positive reward if the action is to "Track"
+    and a target is in the FOV.
+    Track = begin a track since a target is confidently detected.
+    Return a negative reward if the action is to "Track" but
+    the target is not in the FOV.
+    """
+    
     if a == "Track":
         # if in FOV
         # TODO: not handling wrap around
@@ -123,12 +145,16 @@ def GW_Rewards(s, a):
             return [-1.0, False]
     else:
         return [0.0, False]
+
     
 def clamp(n, smallest, largest):
+    """Useful clamping function"""
     return max(smallest, min(n, largest))
 
-def step_update(s, policy):
 
+def step_update(s, policy):
+    """Step through the POMDP"""
+    
     # observe environment
     obs = GW_Observations(s)
     
@@ -148,6 +174,7 @@ def step_update(s, policy):
 
 
 class rand_policy:
+    """Random action policy"""
     def choose_action(self, s, obs):
         act = random.randint(1,len(GW_Actions))
         act = GW_Actions[str(act)]
@@ -155,6 +182,10 @@ class rand_policy:
 
 
 class simple_policy:
+    """Policy that always goes left, zooms out,
+    and "Tracks" if the observation was True.
+    """
+    
     def choose_action(self, s, obs):
         if obs == True:
             act = "Track"
@@ -165,25 +196,29 @@ class simple_policy:
         return act
 
 
+# visualization code
 visualize = True
 if visualize:
     viz = visual()
-    
-p = rand_policy()
+
+# choose policy
+##p = rand_policy()
 p = simple_policy()
 
 gamma = 0.99
 episodes = 1
 ep_rewards = 0
+max_steps = 200
 for ep in range(episodes):
     s = GW_State() # initialize
     # might need an initial observation here
 
     r_tot = 0
-    for t in range(200):
+    for t in range(max_steps):
         obs, a, s, r, done = step_update(s,p)
         r_tot = r_tot + gamma**t*r
-        print(obs, a, r, done, s.target_r, s.focal_pt,s.target_theta,s.cam_theta)
+        
+##        print(obs, a, r, done, s.target_r, s.focal_pt,s.target_theta,s.cam_theta)
 
         if visualize:
             viz.update(s)
